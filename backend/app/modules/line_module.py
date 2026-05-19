@@ -1,23 +1,22 @@
 """
 LINE Module - Handle LINE Webhook Events
+
+使用 httpx 直接调用 LINE API，不依赖 line-bot-sdk。
 """
 import os
 import logging
 from typing import Optional
+import httpx
 
-from linebot import LineBotApi
-from linebot.models import TextSendMessage, QuickReply, QuickReplyButton, MessageAction
-from linebot.webhook import WebhookParser
-
-from modules.intent_module import classify_intent, IntentType
-from modules.faq_module import get_faq_answer
-from modules.ai_module import call_ai
+from app.modules.intent_module import classify_intent, IntentType
+from app.modules.faq_module import get_faq_answer
+from app.modules.ai_module import call_ai
 
 logger = logging.getLogger(__name__)
 
-# LINE API configuration
-line_api = LineBotApi(os.getenv("LINE_CHANNEL_ACCESS_TOKEN", ""))
-line_parser = WebhookParser(os.getenv("LINE_CHANNEL_SECRET", ""))
+# LINE API 配置
+LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "")
+LINE_API_BASE = "https://api.line.me/v2"
 
 
 def handle_line_event(event) -> Optional[str]:
@@ -69,10 +68,10 @@ def handle_image_message(event) -> str:
     """
     Handle incoming image message - extract property info from PDF/image.
     """
-    from modules.ocr_module import extract_property_info
+    from app.modules.ocr_module import extract_property_info
 
     try:
-        message_content = line_api.get_message_content(event.message.id)
+        message_content = get_message_content(event.message.id)
         property_info = extract_property_info(message_content)
 
         if property_info:
@@ -132,7 +131,7 @@ def _handle_cost_explanation(text: str) -> str:
 - 管理费（共益费）
 - 修缮费（修缮积立金）
 - 固定资产税
-- 、都市计划税
+- 都市计划税
 - 贷款相关费用"""
 
     return call_ai(prompt)
@@ -197,25 +196,97 @@ def _format_property_info(info: dict) -> str:
     return "\n".join(lines)
 
 
-def create_quick_reply_buttons() -> QuickReply:
+def get_message_content(message_id: str) -> bytes:
     """
-    Create quick reply buttons for common actions.
+    Get message content from LINE API.
+
+    Args:
+        message_id: LINE message ID
+
+    Returns:
+        Content bytes
     """
-    return QuickReply(
-        items=[
-            QuickReplyButton(action=MessageAction(label="🔍 房源咨询", text="我想找房源")),
-            QuickReplyButton(action=MessageAction(label="💰 费用说明", text="费用有哪些")),
-            QuickReplyButton(action=MessageAction(label="📋 规则说明", text="永住条件")),
-            QuickReplyButton(action=MessageAction(label="📄 要资料", text("我要资料")),
+    if not LINE_CHANNEL_ACCESS_TOKEN:
+        raise ValueError("LINE_CHANNEL_ACCESS_TOKEN not set")
+
+    with httpx.Client() as client:
+        response = client.get(
+            f"{LINE_API_BASE}/message/{message_id}/content",
+            headers={"Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}"},
+        )
+        response.raise_for_status()
+        return response.content
+
+
+def reply_message(reply_token: str, text: str) -> None:
+    """
+    Reply to LINE user.
+
+    Args:
+        reply_token: LINE reply token
+        text: Reply text
+    """
+    if not LINE_CHANNEL_ACCESS_TOKEN:
+        raise ValueError("LINE_CHANNEL_ACCESS_TOKEN not set")
+
+    with httpx.Client() as client:
+        response = client.post(
+            f"{LINE_API_BASE}/message/reply",
+            headers={
+                "Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "replyToken": reply_token,
+                "messages": [{"type": "text", "text": text}],
+            },
+        )
+        response.raise_for_status()
+
+
+def push_message(line_id: str, text: str) -> None:
+    """
+    Push message to LINE user.
+
+    Args:
+        line_id: LINE user ID
+        text: Message text
+    """
+    if not LINE_CHANNEL_ACCESS_TOKEN:
+        raise ValueError("LINE_CHANNEL_ACCESS_TOKEN not set")
+
+    with httpx.Client() as client:
+        response = client.post(
+            f"{LINE_API_BASE}/message/push",
+            headers={
+                "Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "to": line_id,
+                "messages": [{"type": "text", "text": text}],
+            },
+        )
+        response.raise_for_status()
+
+
+# 简化的 Quick Reply 按钮构建
+def create_quick_reply_json():
+    """
+    创建 Quick Reply 按钮 JSON（用于 API 调用）。
+    """
+    return {
+        "items": [
+            {"type": "action", "action": {"type": "message", "label": "🔍 房源咨询", "text": "我想找房源"}},
+            {"type": "action", "action": {"type": "message", "label": "💰 费用说明", "text": "费用有哪些"}},
+            {"type": "action", "action": {"type": "message", "label": "📋 规则说明", "text": "永住条件"}},
+            {"type": "action", "action": {"type": "message", "label": "📄 要资料", "text": "我要资料"}},
         ]
-    )
+    }
 
 
 def send_response(line_id: str, text: str) -> None:
     """
     Send text response to LINE user.
     """
-    line_api.push_message(
-        line_id,
-        TextSendMessage(text=text, quick_reply=create_quick_reply_buttons())
-    )
+    push_message(line_id, text)

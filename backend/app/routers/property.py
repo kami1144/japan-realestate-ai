@@ -12,7 +12,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from knowledge.kb import (
+from app.knowledge.kb import (
     get_property,
     search_properties,
     calculate_total_income,

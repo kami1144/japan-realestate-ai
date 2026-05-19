@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 env_path = Path(__file__).parent.parent.parent / ".env"
 load_dotenv(env_path)
 
-from routers import line, property
+from app.routers import line, property
 
 app = FastAPI(
     title="Japan Real Estate AI",

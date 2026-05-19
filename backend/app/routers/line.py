@@ -7,12 +7,13 @@ LINE Router - LINE Webhook API
 - /line/health - 健康检查
 """
 
+import json
+import os
 from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import JSONResponse
-from linebot.webhook import WebhookPayload
 from pydantic import BaseModel
 
-from modules.line_module import handle_line_event, line_parser, line_api
+from app.modules.line_module import handle_line_event, reply_message
 
 router = APIRouter()
 
@@ -29,40 +30,38 @@ async def line_webhook(request: Request):
 
     处理来自 LINE 平台的所有事件。
     """
-    # 解析签名
-    signature = request.headers.get("x-line-signature", "")
+    # 解析请求体
     body = await request.body()
+    signature = request.headers.get("x-line-signature", "")
 
-    # 验证签名（生产环境应验证）
-    # try:
-    #     line_parser.validate_signature(body, signature)
-    # except InvalidSignatureError:
-    #     raise HTTPException(status_code=400, detail="Invalid signature")
-
-    # 解析事件
+    # 解析 JSON
     try:
-        events = line_parser.parse(body.decode("utf-8"), signature)
-    except Exception as e:
-        print(f"[WARN] Failed to parse LINE event: {e}")
-        # 开发环境直接解析
-        try:
-            import json
-            body_json = json.loads(body)
-            events = []
-            for event_data in body_json.get("events", []):
-                events.append(event_data)
-        except:
-            raise HTTPException(status_code=400, detail="Invalid payload")
+        body_json = json.loads(body)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid JSON")
+
+    events = body_json.get("events", [])
 
     # 处理事件
-    for event in events:
+    for event_data in events:
         try:
+            # 创建简单的 Event 对象
+            class Event:
+                def __init__(self, data):
+                    self.type = data.get("type")
+                    self.reply_token = data.get("replyToken")
+                    self.source = data.get("source", {})
+                    if data.get("message"):
+                        self.message = type("Message", (), data.get("message", {}))()
+
+            event = Event(event_data)
             response_text = handle_line_event(event)
-            if response_text:
-                # 回复用户
-                reply_token = getattr(event, "reply_token", None)
-                if reply_token:
-                    line_api.reply_message(reply_token, response_text)
+
+            if response_text and event.reply_token:
+                try:
+                    reply_message(event.reply_token, response_text)
+                except Exception as e:
+                    print(f"[WARN] Failed to reply: {e}")
         except Exception as e:
             print(f"[WARN] Failed to handle event: {e}")
 
@@ -101,8 +100,6 @@ async def line_config():
     Returns:
         LINE 配置
     """
-    import os
-
     return {
         "channel_secret_set": bool(os.getenv("LINE_CHANNEL_SECRET")),
         "channel_access_token_set": bool(os.getenv("LINE_CHANNEL_ACCESS_TOKEN")),
