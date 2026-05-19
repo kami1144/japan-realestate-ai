@@ -1,0 +1,1 @@
+# Japan Real Estate AI App
