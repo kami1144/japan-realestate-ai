@@ -2,25 +2,29 @@
 LINE Router - LINE Webhook API
 
 路由：
-- /line/webhook - LINE Webhook
-- /line/config - LINE 配置
-- /line/health - 健康检查
+- /webhook - LINE Webhook
+- /config - LINE 配置
+- /health - 健康检查
 """
 
 import json
 import os
+import asyncio
+import threading
 from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
 
 from app.modules.line_module import handle_line_event, reply_message
 
 router = APIRouter()
 
 
-class WebhookRequest(BaseModel):
-    """Webhook 请求体"""
-    pass
+def _do_reply(reply_token: str, text: str):
+    """Background thread target for LINE reply."""
+    try:
+        reply_message(reply_token, text)
+    except Exception as e:
+        print(f"[WARN] Reply failed: {e}")
 
 
 @router.post("/webhook")
@@ -30,10 +34,7 @@ async def line_webhook(request: Request):
 
     处理来自 LINE 平台的所有事件。
     """
-    print(f"[LINE WEBHOOK] Received request: {request.method}")
-    # 解析请求体
     body = await request.body()
-    print(f"[LINE WEBHOOK] Body size: {len(body)} bytes")
     signature = request.headers.get("x-line-signature", "")
 
     # 解析 JSON
@@ -46,7 +47,6 @@ async def line_webhook(request: Request):
 
     # 处理事件
     for event_data in events:
-        print(f"[DEBUG] Processing event: {event_data}")
         try:
             # 创建简单的 Event 对象
             class Event:
@@ -61,10 +61,9 @@ async def line_webhook(request: Request):
             response_text = handle_line_event(event)
 
             if response_text and event.reply_token:
-                try:
-                    reply_message(event.reply_token, response_text)
-                except Exception as e:
-                    print(f"[WARN] Failed to reply: {e}")
+                # Non-blocking reply in background thread
+                t = threading.Thread(target=_do_reply, args=(event.reply_token, response_text))
+                t.start()
         except Exception as e:
             print(f"[WARN] Failed to handle event: {e}")
 
@@ -83,15 +82,11 @@ async def line_webhook_get():
 async def line_health():
     """
     LINE 健康检查
-
-    Returns:
-        健康状态
     """
     return {"status": "ok"}
 
 
-class LineConfigRequest(BaseModel):
-    """LINE 配置请求"""
+class LineConfigRequest:
     pass
 
 
@@ -99,9 +94,6 @@ class LineConfigRequest(BaseModel):
 async def line_config():
     """
     LINE 配置信息
-
-    Returns:
-        LINE 配置
     """
     return {
         "channel_secret_set": bool(os.getenv("LINE_CHANNEL_SECRET")),
@@ -110,7 +102,7 @@ async def line_config():
 
 
 @router.post("/config")
-async def line_config_update(config: LineConfigRequest):
+async def line_config_update():
     """
     更新 LINE 配置（预留）
     """

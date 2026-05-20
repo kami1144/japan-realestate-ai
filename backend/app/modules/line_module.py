@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 # LINE API 配置
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "")
-LINE_API_BASE = "https://api.line.me/v2"
+LINE_API_BASE = "https://api.line.me/v2/bot"
 
 
 def handle_line_event(event) -> Optional[str]:
