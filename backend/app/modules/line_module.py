@@ -100,77 +100,34 @@ def handle_postback(data: str) -> str:
 
 
 def _handle_property_inquiry(text: str) -> str:
-    """
-    Handle property inquiry intent.
-    """
-    from modules.ai_module import call_ai
-
-    prompt = f"""用户询问房源信息：{text}
-
-请以中文回答，并使用认知翻译解释日本房产术语。"""
-
+    from app.modules.ai_module import call_ai
+    prompt = f"用户询问房源信息：{text}\n\n请以中文回答，并使用认知翻译解释日本房产术语。"
     return call_ai(prompt)
 
 
 def _handle_cost_explanation(text: str) -> str:
-    """
-    Handle cost explanation intent - with cognitive translation.
-    """
-    # Check if it's a FAQ
+    from app.modules.faq_module import get_faq_answer
     faq_answer = get_faq_answer(text)
     if faq_answer:
         return faq_answer
-
-    # Use AI for more detailed explanation
-    from modules.ai_module import call_ai
-
-    prompt = f"""用户询问日本房产费用：{text}
-
-请用中文解释以下费用概念，并对比中国类似概念：
-- 初期费用（登录许可证、火灾保险等）
-- 管理费（共益费）
-- 修缮费（修缮积立金）
-- 固定资产税
-- 都市计划税
-- 贷款相关费用"""
-
+    from app.modules.ai_module import call_ai
+    prompt = f"用户询问日本房产费用：{text}\n\n请用中文解释以下费用概念，并对比中国类似概念：\n- 初期费用（登录许可证、火灾保险等）\n- 管理费（共益费）\n- 修缮费（修缮积立金）\n- 固定资产税\n- 都市计划税\n- 贷款相关费用"
     return call_ai(prompt)
 
 
 def _handle_rules_explanation(text: str) -> str:
-    """
-    Handle rules explanation intent - with legal context.
-    """
-    # Check if it's a FAQ
+    from app.modules.faq_module import get_faq_answer
     faq_answer = get_faq_answer(text)
     if faq_answer:
         return faq_answer
-
-    # Use AI for detailed explanation
-    from modules.ai_module import call_ai
-
-    prompt = f"""用户询问日本房产相关规则：{text}
-
-请用中文详细解释以下内容：
-1. 永住申请条件与房产关系
-2. 签证类型与房产投资
-3. 民宿合法化（民宿许可vs特区民宿）
-4. 外国人贷款条件
-5. 海外投资者的税务义务"""
-
+    from app.modules.ai_module import call_ai
+    prompt = f"用户询问日本房产相关规则：{text}\n\n请用中文详细解释以下内容：\n1. 永住申请条件与房产关系\n2. 签证类型与房产投资\n3. 民宿合法化（民宿许可vs特区民宿）\n4. 外国人贷款条件\n5. 海外投资者的税务义务"
     return call_ai(prompt)
 
 
 def _handle_document_request(text: str) -> str:
-    """
-    Handle document request intent.
-    """
-    from modules.ai_module import call_ai
-
-    prompt = f"""用户请求资料：{text}
-
-请确认用户需要的资料类型（户型图、投资分析PDF、市场报告等），并引导用户提供邮箱或LINE联系方式。"""
-
+    from app.modules.ai_module import call_ai
+    prompt = f"用户请求资料：{text}\n\n请确认用户需要的资料类型（户型图、投资分析PDF、市场报告等），并引导用户提供邮箱或LINE联系方式。"
     return call_ai(prompt)
 
 
