@@ -42,7 +42,7 @@ class AIClient:
     """MiniMax AI 客户端"""
 
     def __init__(self):
-        self.api_key = os.getenv("MINIMAX_API_KEY", "")
+        self.api_key = os.getenv("MINIMAX_API_KEY", "") or os.getenv("AI_API_KEY", "")
         self.model = os.getenv("MINIMAX_MODEL", "MiniMax-M2.7")
         self.base_url = "https://api.minimax.chat/v1"
         self.timeout = 30.0

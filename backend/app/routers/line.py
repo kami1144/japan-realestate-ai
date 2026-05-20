@@ -30,8 +30,10 @@ async def line_webhook(request: Request):
 
     处理来自 LINE 平台的所有事件。
     """
+    print(f"[LINE WEBHOOK] Received request: {request.method}")
     # 解析请求体
     body = await request.body()
+    print(f"[LINE WEBHOOK] Body size: {len(body)} bytes")
     signature = request.headers.get("x-line-signature", "")
 
     # 解析 JSON
@@ -44,6 +46,7 @@ async def line_webhook(request: Request):
 
     # 处理事件
     for event_data in events:
+        print(f"[DEBUG] Processing event: {event_data}")
         try:
             # 创建简单的 Event 对象
             class Event:

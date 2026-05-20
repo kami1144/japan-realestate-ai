@@ -41,7 +41,7 @@ def handle_text_message(text: str, source) -> str:
     """
     # Classify intent
     intent = classify_intent(text)
-    logger.info(f"Classified intent: {intent.value} for text: {text[:50]}...")
+    logger.info(f"Classified intent: {intent} for text: {text[:50]}...")
 
     # Route to appropriate handler
     if intent == IntentType.PROPERTY_INQUIRY:
