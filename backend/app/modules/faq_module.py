@@ -80,6 +80,33 @@ FAQ_DATA = {
     "返済期間": "还款期限",
 }
 
+# 结构化规则知识库（用于 rules_explanation 意图）
+RULES_KNOWLEDGE = {
+    "永住权": {
+        "条件": "1. 在日本居住10年以上（其中5年为工作签证）2. 按时缴纳税金3. 无犯罪记录4. 有足够的资产或技能",
+        "房产关系": "永住权申请与房产无直接关系，但投资房产可作为资产证明辅助申请",
+        "注意": "经营管理签证更容易通过房产民宿投资获取",
+    },
+    "民宿合法": {
+        "旅馆业许可": "全年可经营，需向保健所申请，适合大规模运营",
+        "特区民宿": "东京 Osaka等特定区域，每年最多180天，适合小规模运营",
+        "新法民宿": "2018年实施，每年最多180天，需提交住民通知",
+        "禁止区域": "有些区域禁止民宿，具体需确认用途地域",
+    },
+    "外国人贷款": {
+        "条件": "1. 在日本有居住权 2. 收入证明 3. 工作经验 4. 银行流水",
+        "利率": "通常1.5%-4%，比日本人稍高",
+        "头金": "通常需要30%-40%首付",
+        "银行": "中国银行东京分行、日本本土银行、外资银行均可申请",
+    },
+    "签证类型": {
+        "经营管理签证": "投资500万日元以上即可申请，适合房产投资者",
+        "高度专门职签证": "高收入人群，积分制，优先审查",
+        "旅游签证": "不可投资，只能看房",
+        "永住者配偶": "需与日本人或永住者结婚",
+    },
+}
+
 
 def get_faq_answer(query: str) -> Optional[str]:
     """
@@ -130,6 +157,44 @@ def get_faq_answer(query: str) -> Optional[str]:
         for kw in keywords:
             if kw in query_lower:
                 return f"【{term}】{FAQ_DATA[term]}"
+
+    return None
+
+
+def search_rules_knowledge(text: str) -> str:
+    """
+    搜索规则知识库，返回格式化的结构化答案。
+
+    Args:
+        text: 用户查询文本
+
+    Returns:
+        结构化答案，或 None
+    """
+    text_lower = text.lower()
+
+    # 关键词匹配映射
+    topic_map = {
+        "永住": "永住权",
+        "永住权": "永住权",
+        "签证": "签证类型",
+        "经营管理签证": "签证类型",
+        "民宿合法": "民宿合法",
+        "民宿许可": "民宿合法",
+        "特区民宿": "民宿合法",
+        "贷款条件": "外国人贷款",
+        "外国人贷款": "外国人贷款",
+        "海外投资者": "外国人贷款",
+    }
+
+    for kw, topic in topic_map.items():
+        if kw in text_lower:
+            kb = RULES_KNOWLEDGE.get(topic)
+            if kb:
+                lines = [f"📋 {topic}："]
+                for sub_key, sub_val in kb.items():
+                    lines.append(f"\n  【{sub_key}】{sub_val}")
+                return "".join(lines)
 
     return None
 

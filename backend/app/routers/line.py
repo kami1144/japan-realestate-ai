@@ -51,10 +51,16 @@ async def line_webhook(request: Request):
             # Run blocking AI call in thread pool
             response_text = await asyncio.to_thread(handle_line_event, event)
             log.info(f"[LINE] Got response: {response_text[:50] if response_text else None}...")
-            
+
             if response_text and event.reply_token:
-                await asyncio.to_thread(reply_message, event.reply_token, response_text)
-                log.info(f"[LINE] Reply sent successfully")
+                # 重新获取意图以决定 Quick Reply
+                from app.modules.intent_module import classify_intent
+                from app.modules.line_module import get_quick_reply
+                message_text = event.message.text if hasattr(event, "message") and hasattr(event.message, "text") else ""
+                intent = classify_intent(message_text)
+                quick_reply = get_quick_reply(intent)
+                await asyncio.to_thread(reply_message, event.reply_token, response_text, quick_reply)
+                log.info(f"[LINE] Reply sent with quick_reply intent={intent}")
             elif not response_text:
                 log.warning(f"[LINE] No response generated for event")
             elif not event.reply_token:

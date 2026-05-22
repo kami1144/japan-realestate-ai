@@ -5,7 +5,7 @@ LINE Module - Handle LINE Webhook Events
 """
 import os
 import logging
-from typing import Optional
+from typing import Optional, List, Any
 import httpx
 
 from app.modules.intent_module import classify_intent, IntentType
@@ -100,28 +100,117 @@ def handle_postback(data: str) -> str:
 
 
 def _handle_property_inquiry(text: str) -> str:
+    """
+    处理房源咨询：先用 KB 搜索，匹配到房源则返回结构化信息，
+    未匹配到则由 AI 补充回答。
+    """
     from app.modules.ai_module import call_ai
-    prompt = f"用户询问房源信息：{text}\n\n请以中文回答，并使用认知翻译解释日本房产术语。"
-    return call_ai(prompt)
+    from app.knowledge.kb import search_properties, format_property_for_line, get_all_properties
+
+    # 尝试从文本中提取搜索条件
+    area_kw = None
+    for kw in ["东京", "大阪", "涩谷", "新宿", "浅草", "横滨"]:
+        if kw in text:
+            area_kw = kw
+            break
+
+    min_yield = None
+    for yield_kw in ["利回り", "回报率", "收益率"]:
+        if yield_kw in text:
+            # 尝试提取数字
+            import re
+            m = re.search(r"(\d+(?:\.\d+)?)\s*[%％]", text)
+            if m:
+                min_yield = float(m.group(1))
+                break
+
+    min_price = None
+    max_price = None
+    import re
+    price_m = re.search(r"(\d+)00\s*万", text)
+    if price_m:
+        min_price = int(price_m.group(1)) * 100
+
+    # KB 搜索
+    results = search_properties(
+        min_price=min_price,
+        max_price=max_price,
+        min_yield=min_yield,
+        area=area_kw,
+    )
+
+    if results:
+        lines = [f"为您找到 {len(results)} 个符合条件的房源：\n"]
+        for prop in results[:3]:  # 最多返回3个
+            lines.append(format_property_for_line(prop))
+            lines.append("")
+        if len(results) > 3:
+            lines.append(f"还有 {len(results) - 3} 个房源，告诉我您的具体需求，我帮您筛选。")
+        return "\n".join(lines)
+    else:
+        # 无 KB 结果，用 AI，附带 FAQ 知识
+        faq_context = "已知房源：新宿物件(3500万/5.2%)、涩谷物件(4200万/4.8%)、大阪难波物件(2800万/6.1%)"
+        prompt = f"用户询问房源信息：{text}\n\n{faq_context}\n\n请以中文回答，结合已知房源信息推荐，并使用认知翻译解释日本房产术语。"
+        return call_ai(prompt)
 
 
 def _handle_cost_explanation(text: str) -> str:
+    """
+    处理费用咨询：先用 KB 费用计算器，再用 FAQ，最后 AI。
+    """
     from app.modules.faq_module import get_faq_answer
+    from app.modules.ai_module import call_ai
+    from app.knowledge.kb import calculate_initial_cost
+
+    # 1. 尝试从文本提取价格计算初期费用
+    import re
+    price_m = re.search(r"(\d+)万", text)
+    if price_m:
+        price = int(price_m.group(1))
+        fee = calculate_initial_cost(price)
+        lines = [
+            f"💰 初期费用估算（房价 {price} 万円）：",
+            f"",
+            f"※ 租金按表面利回り5%估算（月租约 {fee.deposit * 10000:,} 円）",
+            f"",
+            f"  敷金（押金）：{fee.deposit * 10000:,} 円",
+            f"  礼金（好处费）：{fee.key_money * 10000:,} 円",
+            f"  火灾保险：{fee.fire_insurance:,} 円/年",
+            f"  地震保险：{fee.earthquake_insurance:,} 円/年",
+            f"  固定资产税：{fee.fixed_asset_tax:,} 円/年",
+            f"  都市计划税：{fee.city_planning_tax:,} 円/年",
+        ]
+        return "\n".join(lines)
+
+    # 2. 查 FAQ
     faq_answer = get_faq_answer(text)
     if faq_answer:
         return faq_answer
-    from app.modules.ai_module import call_ai
-    prompt = f"用户询问日本房产费用：{text}\n\n请用中文解释以下费用概念，并对比中国类似概念：\n- 初期费用（登录许可证、火灾保险等）\n- 管理费（共益费）\n- 修缮费（修缮积立金）\n- 固定资产税\n- 都市计划税\n- 贷款相关费用"
+
+    # 3. 最后走 AI
+    prompt = f"用户询问日本房产费用：{text}\n\n请用中文解释，并对比中国类似概念。"
     return call_ai(prompt)
 
 
 def _handle_rules_explanation(text: str) -> str:
-    from app.modules.faq_module import get_faq_answer
+    """
+    处理规则咨询：先查结构化规则知识库 → FAQ → AI。
+    """
+    from app.modules.faq_module import get_faq_answer, search_rules_knowledge
+    from app.modules.ai_module import call_ai
+
+    # 1. 先查结构化规则知识库
+    rules_answer = search_rules_knowledge(text)
+    if rules_answer:
+        return rules_answer
+
+    # 2. 再查 FAQ
     faq_answer = get_faq_answer(text)
     if faq_answer:
         return faq_answer
-    from app.modules.ai_module import call_ai
-    prompt = f"用户询问日本房产相关规则：{text}\n\n请用中文详细解释以下内容：\n1. 永住申请条件与房产关系\n2. 签证类型与房产投资\n3. 民宿合法化（民宿许可vs特区民宿）\n4. 外国人贷款条件\n5. 海外投资者的税务义务"
+
+    # 3. 最后才走 AI
+    prompt = f"用户询问日本房产相关规则：{text}\n\n请用中文详细解释，并对比中国相关制度。"
     return call_ai(prompt)
 
 
@@ -175,16 +264,21 @@ def get_message_content(message_id: str) -> bytes:
         return response.content
 
 
-def reply_message(reply_token: str, text: str) -> None:
+def reply_message(reply_token: str, text: str, quick_reply: List[Any] = None) -> None:
     """
     Reply to LINE user.
 
     Args:
         reply_token: LINE reply token
         text: Reply text
+        quick_reply: Optional list of quick reply items
     """
     if not LINE_CHANNEL_ACCESS_TOKEN:
         raise ValueError("LINE_CHANNEL_ACCESS_TOKEN not set")
+
+    message = {"type": "text", "text": text}
+    if quick_reply:
+        message["quickReply"] = {"items": quick_reply}
 
     with httpx.Client(timeout=10.0) as client:
         response = client.post(
@@ -195,7 +289,7 @@ def reply_message(reply_token: str, text: str) -> None:
             },
             json={
                 "replyToken": reply_token,
-                "messages": [{"type": "text", "text": text}],
+                "messages": [message],
             },
         )
         response.raise_for_status()
@@ -227,19 +321,40 @@ def push_message(line_id: str, text: str) -> None:
         response.raise_for_status()
 
 
-# 简化的 Quick Reply 按钮构建
-def create_quick_reply_json():
-    """
-    创建 Quick Reply 按钮 JSON（用于 API 调用）。
-    """
-    return {
-        "items": [
-            {"type": "action", "action": {"type": "message", "label": "🔍 房源咨询", "text": "我想找房源"}},
-            {"type": "action", "action": {"type": "message", "label": "💰 费用说明", "text": "费用有哪些"}},
-            {"type": "action", "action": {"type": "message", "label": "📋 规则说明", "text": "永住条件"}},
-            {"type": "action", "action": {"type": "message", "label": "📄 要资料", "text": "我要资料"}},
-        ]
-    }
+# Quick Reply 按钮配置（按意图）
+QUICK_REPLY_ITEMS = {
+    "default": [
+        {"type": "action", "action": {"type": "message", "label": "🔍 房源咨询", "text": "我想找房源"}},
+        {"type": "action", "action": {"type": "message", "label": "💰 费用说明", "text": "费用有哪些"}},
+        {"type": "action", "action": {"type": "message", "label": "📋 规则说明", "text": "永住条件"}},
+        {"type": "action", "action": {"type": "message", "label": "📄 要资料", "text": "我要资料"}},
+    ],
+    IntentType.PROPERTY_INQUIRY: [
+        {"type": "action", "action": {"type": "message", "label": "💰 费用说明", "text": "费用有哪些"}},
+        {"type": "action", "action": {"type": "message", "label": "📋 规则说明", "text": "永住条件"}},
+        {"type": "action", "action": {"type": "message", "label": "📄 要资料", "text": "我要资料"}},
+    ],
+    IntentType.COST_EXPLANATION: [
+        {"type": "action", "action": {"type": "message", "label": "🔍 房源咨询", "text": "我想找房源"}},
+        {"type": "action", "action": {"type": "message", "label": "📋 规则说明", "text": "永住条件"}},
+        {"type": "action", "action": {"type": "message", "label": "📄 要资料", "text": "我要资料"}},
+    ],
+    IntentType.RULES_EXPLANATION: [
+        {"type": "action", "action": {"type": "message", "label": "🔍 房源咨询", "text": "我想找房源"}},
+        {"type": "action", "action": {"type": "message", "label": "💰 费用说明", "text": "费用有哪些"}},
+        {"type": "action", "action": {"type": "message", "label": "📄 要资料", "text": "我要资料"}},
+    ],
+    IntentType.DOCUMENT_REQUEST: [
+        {"type": "action", "action": {"type": "message", "label": "🔍 房源咨询", "text": "我想找房源"}},
+        {"type": "action", "action": {"type": "message", "label": "💰 费用说明", "text": "费用有哪些"}},
+        {"type": "action", "action": {"type": "message", "label": "📋 规则说明", "text": "永住条件"}},
+    ],
+}
+
+
+def get_quick_reply(intent: str) -> List[Any]:
+    """根据意图返回对应的 Quick Reply 按钮列表。"""
+    return QUICK_REPLY_ITEMS.get(intent, QUICK_REPLY_ITEMS["default"])
 
 
 def send_response(line_id: str, text: str) -> None:
