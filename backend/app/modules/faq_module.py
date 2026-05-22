@@ -88,10 +88,21 @@ RULES_KNOWLEDGE = {
         "注意": "经营管理签证更容易通过房产民宿投资获取",
     },
     "民宿合法": {
-        "旅馆业许可": "全年可经营，需向保健所申请，适合大规模运营",
-        "特区民宿": "东京 Osaka等特定区域，每年最多180天，适合小规模运营",
-        "新法民宿": "2018年实施，每年最多180天，需提交住民通知",
-        "禁止区域": "有些区域禁止民宿，具体需确认用途地域",
+        "旅馆业许可": "全年可经营，需向保健所申请，适合大规模运营。需配备管理员，消防检查合格，营业成本较高。",
+        "特区民宿": "东京大阪等特定区域，每年最多180天。申请简单，但需确认区域是否在许可范围内。",
+        "新法民宿": "2018年实施，每年最多180天。需向区保健所提交「民泊terasu申报」，无许可也可运营但有诸多限制。",
+        "禁止区域": "用途地域为「第一种低层住居专用地域」「第二种低层住居专用地域」等禁止民宿，具体需查各区规划。",
+        "东京各区政策": {
+            "新宿": "大部分区域可申请特区民宿，需确认用途地域",
+            "涩谷": "可申请特区民宿，住宅区限制较多",
+            "浅草/台东": "观光特区，民宿政策相对宽松",
+            "台场": "商业区为主，政策较宽松",
+            "丰岛/池袋": "住宅为主，需确认具体区域",
+            "大田": "部分区域可申请，羽田机场周边有噪音限制"
+        },
+        "大阪政策": "大阪市民泊条例已废除，改由国家新法管辖。大阪心斋桥/难波等观光区域政策较宽松。",
+        "申请流程": "1.确认用途地域→2.向区保健所申报→3.消防检查→4.取得登录番号→5.每年更新",
+        "注意事项": "公寓管理规约有禁止商用条款的需先确认，违规可能遭邻居投诉或被取消许可"
     },
     "外国人贷款": {
         "条件": "1. 在日本有居住权 2. 收入证明 3. 工作经验 4. 银行流水",
@@ -193,8 +204,41 @@ def search_rules_knowledge(text: str) -> str:
             if kb:
                 lines = [f"📋 {topic}："]
                 for sub_key, sub_val in kb.items():
-                    lines.append(f"\n  【{sub_key}】{sub_val}")
+                    if isinstance(sub_val, dict):
+                        # 嵌套字典（如东京各区政策）
+                        lines.append(f"\n  【{sub_key}】")
+                        for area, desc in sub_val.items():
+                            lines.append(f"\n    ・{area}：{desc}")
+                    else:
+                        lines.append(f"\n  【{sub_key}】{sub_val}")
                 return "".join(lines)
+
+    # 特殊处理：直接查询某地区的民宿政策
+    # 优先检查完整键名（跨多个区域）
+    compound_areas = {
+        "浅草": "浅草/台东",
+        "台东": "浅草/台东",
+    }
+    for area, kb_key in compound_areas.items():
+        if area in text_lower:
+            kb = RULES_KNOWLEDGE.get("民宿合法")
+            if kb and isinstance(kb.get("东京各区政策"), dict):
+                desc = kb["东京各区政策"].get(kb_key)
+                if desc:
+                    return f"📍 {area}民宿政策：{desc}"
+            break
+
+    # 再检查独立区域
+    single_areas = ["新宿", "涩谷", "台场", "丰岛", "池袋", "大田", "大阪", "难波", "心斋桥"]
+    for area in single_areas:
+        if area in text_lower:
+            kb = RULES_KNOWLEDGE.get("民宿合法")
+            if kb and isinstance(kb.get("东京各区政策"), dict) and area in kb["东京各区政策"]:
+                desc = kb["东京各区政策"][area]
+                return f"📍 {area}民宿政策：{desc}"
+            elif area in kb.get("大阪政策", ""):
+                return f"📍 {area}民宿政策：{kb['大阪政策']}"
+            break
 
     return None
 
