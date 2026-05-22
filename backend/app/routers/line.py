@@ -33,6 +33,9 @@ async def line_webhook(request: Request):
     # 立即响应 LINE
     async def process_event(event_data: dict):
         """Process event and reply asynchronously after response is sent."""
+        import logging, datetime
+        log = logging.getLogger("uvicorn.error")
+        log.info(f"[LINE] Async task started ts={datetime.datetime.now().isoformat()}")
         try:
             class Event:
                 def __init__(self, data):
@@ -43,12 +46,21 @@ async def line_webhook(request: Request):
                         self.message = type("Message", (), data.get("message", {}))()
 
             event = Event(event_data)
+            log.info(f"[LINE] Processing event type={event.type} reply_token={event.reply_token[:20] if event.reply_token else None}...")
+            
             # Run blocking AI call in thread pool
             response_text = await asyncio.to_thread(handle_line_event, event)
+            log.info(f"[LINE] Got response: {response_text[:50] if response_text else None}...")
+            
             if response_text and event.reply_token:
                 await asyncio.to_thread(reply_message, event.reply_token, response_text)
+                log.info(f"[LINE] Reply sent successfully")
+            elif not response_text:
+                log.warning(f"[LINE] No response generated for event")
+            elif not event.reply_token:
+                log.warning(f"[LINE] No reply_token in event")
         except Exception as e:
-            print(f"[WARN] Failed to handle event: {e}")
+            log.error(f"[LINE] Failed to handle event: {e}", exc_info=True)
 
     # 启动异步任务，不等待
     for event_data in events:

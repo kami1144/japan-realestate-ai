@@ -186,7 +186,7 @@ def reply_message(reply_token: str, text: str) -> None:
     if not LINE_CHANNEL_ACCESS_TOKEN:
         raise ValueError("LINE_CHANNEL_ACCESS_TOKEN not set")
 
-    with httpx.Client() as client:
+    with httpx.Client(timeout=10.0) as client:
         response = client.post(
             f"{LINE_API_BASE}/message/reply",
             headers={
